@@ -1,10 +1,11 @@
 package water
 
 import (
-	"github.com/songgao/water/waterutil"
 	"net"
 	"testing"
 	"time"
+
+	"water/waterutil"
 )
 
 const BUFFERSIZE = 1522
