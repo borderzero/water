@@ -47,7 +47,7 @@ var (
 func init() {
 	k32, err := syscall.LoadLibrary("kernel32.dll")
 	if err != nil {
-		panic("LoadLibrary " + err.Error())
+		panic(any("LoadLibrary " + err.Error()))
 	}
 	defer syscall.FreeLibrary(k32)
 
@@ -59,7 +59,7 @@ func init() {
 func getProcAddr(lib syscall.Handle, name string) uintptr {
 	addr, err := syscall.GetProcAddress(lib, name)
 	if err != nil {
-		panic(name + " " + err.Error())
+		panic(any(name + " " + err.Error()))
 	}
 	return addr
 }
@@ -236,6 +236,9 @@ func setTUN(fd syscall.Handle, network string) error {
 
 // openDev find and open an interface.
 func openDev(config Config) (ifce *Interface, err error) {
+	if config.DeviceType == TUN {
+		return openTunDev(config)
+	}
 	// find the device in registry.
 	deviceid, err := getdeviceid(config.PlatformSpecificParams.ComponentID, config.PlatformSpecificParams.InterfaceName)
 	if err != nil {

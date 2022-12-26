@@ -1,16 +1,16 @@
 package water
 
 import (
+	"github.com/songgao/water/waterutil"
 	"net"
 	"testing"
 	"time"
-
-	"github.com/songgao/water/waterutil"
 )
 
 const BUFFERSIZE = 1522
 
 func startRead(t *testing.T, ifce *Interface) (dataChan <-chan []byte, errChan <-chan error) {
+
 	dataCh := make(chan []byte)
 	errCh := make(chan error)
 	go func() {
