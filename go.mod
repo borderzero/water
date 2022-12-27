@@ -1,4 +1,4 @@
-module water
+module github.com/labulakalia/water
 
 go 1.18
 

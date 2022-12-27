@@ -174,24 +174,21 @@ import (
 
 func main() {
 	ifce, err := water.New(water.Config{
-		DeviceType: water.TAP,
+		DeviceType: water.TUN,
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-	var frame ethernet.Frame
 
+	log.Printf("Interface Name: %s\n", ifce.Name())
+
+	packet := make([]byte, 2000)
 	for {
-		frame.Resize(1500)
-		n, err := ifce.Read([]byte(frame))
+		n, err := ifce.Read(packet)
 		if err != nil {
 			log.Fatal(err)
 		}
-		frame = frame[:n]
-		log.Printf("Dst: %s\n", frame.Destination())
-		log.Printf("Src: %s\n", frame.Source())
-		log.Printf("Ethertype: % x\n", frame.Ethertype())
-		log.Printf("Payload: % x\n", frame.Payload())
+		log.Printf("Packet Received: % x\n", packet[:n])
 	}
 }
 ```
