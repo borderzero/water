@@ -10,7 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"water/winipcfg"
+	_ "unsafe"
+	"github.com/labulakalia/water/winipcfg"
 )
 
 var (
@@ -49,7 +50,7 @@ func openTunDev(config Config) (*Interface, error) {
 		return nil, err
 	}
 	link := winipcfg.LUID(tun.LUID())
-	err = link.SetIPAddresses(ipPrefix)
+	err = link.SetIPAddresses([]netip.Prefix{ipPrefix})
 	if err != nil {
 		return nil, err
 	}
@@ -61,9 +62,9 @@ func openTunDev(config Config) (*Interface, error) {
 }
 
 const (
-	rateMeasurementGranularity = uint64((Second / 2) / Nanosecond)
+	rateMeasurementGranularity = uint64((time.Second / 2) / time.Nanosecond)
 	spinloopRateThreshold      = 800000000 / 8                         // 800mbps
-	spinloopDuration           = uint64(Millisecond / 80 / Nanosecond) // ~1gbit/s
+	spinloopDuration           = uint64(time.Millisecond / 80 / time.Nanosecond) // ~1gbit/s
 )
 
 type Event int
