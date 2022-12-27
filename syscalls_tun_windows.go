@@ -1,3 +1,16 @@
+//package water
+//
+//import (
+//	"golang.org/x/sys/windows"
+//	"golang.zx2c4.com/wireguard/tun"
+//	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
+//	"net/netip"
+//)
+//
+
+//
+
+
 package water
 
 import (
@@ -5,68 +18,19 @@ import (
 	"fmt"
 	"golang.org/x/sys/windows"
 	"golang.zx2c4.com/wintun"
-	"net/netip"
+	"time"
+	_ "unsafe"
 	"os"
 	"sync"
 	"sync/atomic"
-	"time"
-	_ "unsafe"
-	"github.com/labulakalia/water/winipcfg"
 )
 
-var (
-	WintunStaticRequestedGUID = &windows.GUID{
-		Data2: 0xFFFF,
-		Data3: 0xFFFF,
-		Data4: [8]byte{0xFF, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e},
-	}
-	WintunTunnelType = "WireGuard"
-)
-
-type WinTun struct {
-	tun *NativeTun
-}
-
-func (w *WinTun) Read(p []byte) (n int, err error) {
-	return w.tun.Read(p, 0)
-}
-
-func (w *WinTun) Write(p []byte) (n int, err error) {
-	return w.tun.Write(p, 0)
-}
-
-func (w *WinTun) Close() error {
-	return w.tun.Close()
-}
-
-func openTunDev(config Config) (*Interface, error) {
-	tun, err := CreateTUNWithRequestedGUID(config.InterfaceName, WintunStaticRequestedGUID, 0)
-	if err != nil {
-		return nil, err
-	}
-	network := config.PlatformSpecificParams.Network
-	ipPrefix, err := netip.ParsePrefix(network)
-	if err != nil {
-		return nil, err
-	}
-	link := winipcfg.LUID(tun.LUID())
-	err = link.SetIPAddresses([]netip.Prefix{ipPrefix})
-	if err != nil {
-		return nil, err
-	}
-	return &Interface{
-		isTAP:           false,
-		ReadWriteCloser: &WinTun{tun: tun},
-		name:            config.InterfaceName,
-	}, nil
-}
 
 const (
 	rateMeasurementGranularity = uint64((time.Second / 2) / time.Nanosecond)
-	spinloopRateThreshold      = 800000000 / 8                         // 800mbps
+	spinloopRateThreshold      = 800000000 / 8                                   // 800mbps
 	spinloopDuration           = uint64(time.Millisecond / 80 / time.Nanosecond) // ~1gbit/s
 )
-
 type Event int
 
 const (
@@ -75,19 +39,47 @@ const (
 	EventMTUUpdate
 )
 
-type NativeTun struct {
-	wt     *wintun.Adapter
-	name   string
-	handle windows.Handle
+type rateJuggler struct {
+	current       uint64
+	nextByteCount uint64
+	nextStartTime int64
+	changing      int32
+}
 
+type NativeTun struct {
+	wt        *wintun.Adapter
+	name      string
+	handle    windows.Handle
+	rate      rateJuggler
 	session   wintun.Session
 	readWait  windows.Handle
 	events    chan Event
 	running   sync.WaitGroup
 	closeOnce sync.Once
-	close     atomic.Value
+	close     int32
 	forcedMTU int
 }
+
+type WTun struct {
+	dev *NativeTun
+}
+
+func (w *WTun) Close() error {
+	return w.dev.Close()
+}
+
+func (w *WTun) Write(b []byte) (int, error) {
+	return w.dev.Write(b, 0)
+}
+
+func (w *WTun) Read(b []byte) (int, error) {
+	return w.dev.Read(b, 0)
+}
+
+var (
+	WintunTunnelType          = "WireGuard"
+	WintunStaticRequestedGUID *windows.GUID
+)
 
 //go:linkname procyield runtime.procyield
 func procyield(cycles uint32)
@@ -95,8 +87,55 @@ func procyield(cycles uint32)
 //go:linkname nanotime runtime.nanotime
 func nanotime() int64
 
+
+
+func openTunDev(config Config) (ifce *Interface, err error) {
+	if config.DeviceType == TAP {
+		return nil, err
+	}
+	gUID := &windows.GUID{
+		0x0000000,
+		0xFFFF,
+		0xFFFF,
+		[8]byte{0xFF, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e},
+	}
+	if config.PlatformSpecificParams.InterfaceName == "" {
+		config.PlatformSpecificParams.InterfaceName = "WaterIface"
+	}
+	nativeTunDevice, err := CreateTUNWithRequestedGUID(config.PlatformSpecificParams.InterfaceName, gUID, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	//link := winipcfg.LUID(nativeTunDevice.LUID())
+	//ipPrefix, err := netip.ParsePrefix(config.PlatformSpecificParams.Network)
+	//if err != nil {
+	//	return nil, err
+	//}
+	//err = link.SetIPAddresses([]netip.Prefix{ipPrefix})
+	//if err != nil {
+	//	return nil, err
+	//}
+	ifce = &Interface{
+		isTAP: config.DeviceType == TAP,
+		ReadWriteCloser: &WTun{dev: nativeTunDevice},
+		name: config.PlatformSpecificParams.InterfaceName,
+	}
+	return ifce, nil
+}
+
+//
+// CreateTUN creates a Wintun interface with the given name. Should a Wintun
+// interface with the same name exist, it is reused.
+//
+func CreateTUN(ifname string, mtu int) (*NativeTun, error) {
+	return CreateTUNWithRequestedGUID(ifname, WintunStaticRequestedGUID, mtu)
+}
+
+//
 // CreateTUNWithRequestedGUID creates a Wintun interface with the given name and
 // a requested GUID. Should a Wintun interface with the same name exist, it is reused.
+//
 func CreateTUNWithRequestedGUID(ifname string, requestedGUID *windows.GUID, mtu int) (*NativeTun, error) {
 	wt, err := wintun.CreateAdapter(ifname, WintunTunnelType, requestedGUID)
 	if err != nil {
@@ -141,7 +180,7 @@ func (tun *NativeTun) Events() chan Event {
 func (tun *NativeTun) Close() error {
 	var err error
 	tun.closeOnce.Do(func() {
-		tun.close.Store(true)
+		atomic.StoreInt32(&tun.close, 1)
 		windows.SetEvent(tun.readWait)
 		tun.running.Wait()
 		tun.session.End()
@@ -172,12 +211,13 @@ func (tun *NativeTun) Read(buff []byte, offset int) (int, error) {
 	tun.running.Add(1)
 	defer tun.running.Done()
 retry:
-	if tun.close.Load().(bool) {
+	if atomic.LoadInt32(&tun.close) == 1 {
 		return 0, os.ErrClosed
 	}
 	start := nanotime()
+	shouldSpin := atomic.LoadUint64(&tun.rate.current) >= spinloopRateThreshold && uint64(start-atomic.LoadInt64(&tun.rate.nextStartTime)) <= rateMeasurementGranularity*2
 	for {
-		if tun.close.Load().(bool) {
+		if atomic.LoadInt32(&tun.close) == 1 {
 			return 0, os.ErrClosed
 		}
 		packet, err := tun.session.ReceivePacket()
@@ -186,10 +226,10 @@ retry:
 			packetSize := len(packet)
 			copy(buff[offset:], packet)
 			tun.session.ReleaseReceivePacket(packet)
-
+			tun.rate.update(uint64(packetSize))
 			return packetSize, nil
 		case windows.ERROR_NO_MORE_ITEMS:
-			if uint64(nanotime()-start) >= spinloopDuration {
+			if !shouldSpin || uint64(nanotime()-start) >= spinloopDuration {
 				windows.WaitForSingleObject(tun.readWait, windows.INFINITE)
 				goto retry
 			}
@@ -211,11 +251,12 @@ func (tun *NativeTun) Flush() error {
 func (tun *NativeTun) Write(buff []byte, offset int) (int, error) {
 	tun.running.Add(1)
 	defer tun.running.Done()
-	if tun.close.Load().(bool) {
+	if atomic.LoadInt32(&tun.close) == 1 {
 		return 0, os.ErrClosed
 	}
 
 	packetSize := len(buff) - offset
+	tun.rate.update(uint64(packetSize))
 
 	packet, err := tun.session.AllocateSendPacket(packetSize)
 	if err == nil {
@@ -236,7 +277,7 @@ func (tun *NativeTun) Write(buff []byte, offset int) (int, error) {
 func (tun *NativeTun) LUID() uint64 {
 	tun.running.Add(1)
 	defer tun.running.Done()
-	if tun.close.Load().(bool) {
+	if atomic.LoadInt32(&tun.close) == 1 {
 		return 0
 	}
 	return tun.wt.LUID()
@@ -245,4 +286,19 @@ func (tun *NativeTun) LUID() uint64 {
 // RunningVersion returns the running version of the Wintun driver.
 func (tun *NativeTun) RunningVersion() (version uint32, err error) {
 	return wintun.RunningVersion()
+}
+
+func (rate *rateJuggler) update(packetLen uint64) {
+	now := nanotime()
+	total := atomic.AddUint64(&rate.nextByteCount, packetLen)
+	period := uint64(now - atomic.LoadInt64(&rate.nextStartTime))
+	if period >= rateMeasurementGranularity {
+		if !atomic.CompareAndSwapInt32(&rate.changing, 0, 1) {
+			return
+		}
+		atomic.StoreInt64(&rate.nextStartTime, now)
+		atomic.StoreUint64(&rate.current, total*uint64(time.Second/time.Nanosecond)/period)
+		atomic.StoreUint64(&rate.nextByteCount, 0)
+		atomic.StoreInt32(&rate.changing, 0)
+	}
 }

@@ -30,5 +30,6 @@ func defaultPlatformSpecificParams() PlatformSpecificParams {
 	return PlatformSpecificParams{
 		ComponentID: "tap0901",
 		Network:     "192.168.1.10/24",
+		InterfaceName: "WaterIface",
 	}
 }

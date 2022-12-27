@@ -47,7 +47,7 @@ var (
 func init() {
 	k32, err := syscall.LoadLibrary("kernel32.dll")
 	if err != nil {
-		panic(any("LoadLibrary " + err.Error()))
+		panic("LoadLibrary " + err.Error())
 	}
 	defer syscall.FreeLibrary(k32)
 
@@ -59,7 +59,7 @@ func init() {
 func getProcAddr(lib syscall.Handle, name string) uintptr {
 	addr, err := syscall.GetProcAddress(lib, name)
 	if err != nil {
-		panic(any(name + " " + err.Error()))
+		panic(name + " " + err.Error())
 	}
 	return addr
 }
