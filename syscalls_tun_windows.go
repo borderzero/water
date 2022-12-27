@@ -1,19 +1,7 @@
-//package water
-//
-//import (
-//	"golang.org/x/sys/windows"
-//	"golang.zx2c4.com/wireguard/tun"
-//	"golang.zx2c4.com/wireguard/windows/tunnel/winipcfg"
-//	"net/netip"
-//)
-//
-
-//
-
-
 package water
 
 import (
+	_ "embed"
 	"errors"
 	"fmt"
 	"golang.org/x/sys/windows"
@@ -90,36 +78,23 @@ func nanotime() int64
 
 
 func openTunDev(config Config) (ifce *Interface, err error) {
-	if config.DeviceType == TAP {
-		return nil, err
-	}
 	gUID := &windows.GUID{
 		0x0000000,
 		0xFFFF,
 		0xFFFF,
 		[8]byte{0xFF, 0xe9, 0x76, 0xe5, 0x8c, 0x74, 0x06, 0x3e},
 	}
-	if config.PlatformSpecificParams.InterfaceName == "" {
-		config.PlatformSpecificParams.InterfaceName = "WaterIface"
+	if config.PlatformSpecificParams.Name == "" {
+		config.PlatformSpecificParams.Name = "WaterIface"
 	}
-	nativeTunDevice, err := CreateTUNWithRequestedGUID(config.PlatformSpecificParams.InterfaceName, gUID, 0)
+	nativeTunDevice, err := CreateTUNWithRequestedGUID(config.PlatformSpecificParams.Name, gUID, 0)
 	if err != nil {
 		return nil, err
 	}
-
-	//link := winipcfg.LUID(nativeTunDevice.LUID())
-	//ipPrefix, err := netip.ParsePrefix(config.PlatformSpecificParams.Network)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//err = link.SetIPAddresses([]netip.Prefix{ipPrefix})
-	//if err != nil {
-	//	return nil, err
-	//}
 	ifce = &Interface{
 		isTAP: config.DeviceType == TAP,
 		ReadWriteCloser: &WTun{dev: nativeTunDevice},
-		name: config.PlatformSpecificParams.InterfaceName,
+		name: config.PlatformSpecificParams.Name,
 	}
 	return ifce, nil
 }

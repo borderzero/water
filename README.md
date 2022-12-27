@@ -15,7 +15,7 @@ See https://github.com/songgao/packets for functions for parsing various packets
 ## Supported Platforms
 
 * Linux
-* Windows (point-to-point TUN only)
+* Windows
 * macOS (point-to-point TUN only)
 
 ## Installation
@@ -156,11 +156,8 @@ You'd see the ICMP packets printed out:
 1. Only Point-to-Point user TUN devices are supported. TAP devices are *not* supported natively by macOS.
 2. Custom interface names are not supported by macOS. Interface names are automatically generated serially, using the `utun<#>` naming convention.
 
-### TAP on Windows:
-
-To use it with windows, you will need to install a [tap driver](https://github.com/OpenVPN/tap-windows6), or [OpenVPN client](https://github.com/OpenVPN/openvpn) for windows.
-
-It's compatible with the Linux code.
+### TUN on Windows:
+To use it with windows,you will need to download file [wintun.dll](https://www.wintun.net/) in running dir.
 
 ```go
 package main
@@ -168,7 +165,6 @@ package main
 import (
 	"log"
 
-	"github.com/songgao/packets/ethernet"
 	"github.com/labulakalia/water"
 )
 
@@ -189,6 +185,59 @@ func main() {
 			log.Fatal(err)
 		}
 		log.Printf("Packet Received: % x\n", packet[:n])
+	}
+}
+```
+```dos
+go run main.go
+```
+In a new cmd (admin right):
+```dos
+# Replace with your device name, it can be achieved by ifce.Name().
+netsh interface ip set address name="Ehternet 2" source=static addr=10.1.0.10 mask=255.255.255.0 gateway=none
+```
+
+```dos
+ping 10.1.0.255
+```
+You'll see output containing the IPv4 ICMP frame same as the Linux version.
+
+### TAP on Windows:
+
+To use it with windows, you will need to install a [tap driver](https://github.com/OpenVPN/tap-windows6), or [OpenVPN client](https://github.com/OpenVPN/openvpn) for windows.
+
+It's compatible with the Linux code.
+
+```go
+package main
+
+import (
+	"log"
+
+	"github.com/songgao/packets/ethernet"
+	"github.com/songgao/water"
+)
+
+func main() {
+	ifce, err := water.New(water.Config{
+		DeviceType: water.TAP,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	var frame ethernet.Frame
+
+	for {
+		frame.Resize(1500)
+		n, err := ifce.Read([]byte(frame))
+		if err != nil {
+			log.Fatal(err)
+		}
+		frame = frame[:n]
+		log.Printf("Dst: %s\n", frame.Destination())
+		log.Printf("Src: %s\n", frame.Source())
+		log.Printf("Ethertype: % x\n", frame.Ethertype())
+		log.Printf("Payload: % x\n", frame.Payload())
 	}
 }
 ```
