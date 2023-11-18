@@ -65,7 +65,7 @@ func (w *WTun) Read(b []byte) (int, error) {
 }
 
 var (
-	WintunTunnelType          = "WireGuard"
+	WintunTunnelType          = "Wintun"
 	WintunStaticRequestedGUID *windows.GUID
 )
 
